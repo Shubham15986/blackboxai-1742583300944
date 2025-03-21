@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Attendance - Smart Attendance System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Face API -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-detection"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        #video {
+            transform: scaleX(-1);
+        }
+        .camera-guide {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            border: 2px solid #3b82f6;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+        .camera-guide::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            border: 2px solid rgba(59, 130, 246, 0.5);
+            border-radius: 15px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-qrcode text-blue-600 text-2xl mr-2"></i>
+                    <span class="text-xl font-semibold">Smart Attendance</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-700" id="student-name"></span>
+                    <button onclick="logout()" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-sign-out-alt mr-1"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="p-6">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4">Mark Your Attendance</h2>
+                
+                <!-- Subject Selection -->
+                <div class="mb-6">
+                    <label for="subject-select" class="block text-sm font-medium text-gray-700 mb-2">Select Subject</label>
+                    <select id="subject-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                        <option value="">Select a subject...</option>
+                    </select>
+                </div>
+
+                <!-- WiFi Status -->
+                <div class="mb-6 p-4 bg-yellow-50 rounded-lg" id="wifi-status">
+                    <div class="flex items-center">
+                        <i class="fas fa-wifi text-yellow-400 mr-2"></i>
+                        <span class="text-yellow-700">Please select a subject to check WiFi connection</span>
+                    </div>
+                </div>
+
+                <!-- Camera Feed Container -->
+                <div class="relative max-w-2xl mx-auto">
+                    <video id="video" class="w-full rounded-lg shadow-md" autoplay muted playsinline></video>
+                    <canvas id="overlay" class="absolute top-0 left-0 w-full h-full"></canvas>
+                    <div class="camera-guide"></div>
+                    
+                    <!-- Face Detection Status -->
+                    <div id="face-status" class="absolute top-4 left-4 px-3 py-1 rounded-full text-sm font-medium hidden">
+                        Face Detected
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="mt-6 flex flex-col items-center space-y-4">
+                    <button id="capture-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-lg font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fas fa-camera mr-2"></i>
+                        Mark Attendance
+                    </button>
+                    
+                    <!-- Camera Instructions -->
+                    <p class="text-sm text-gray-600 text-center">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Position your face within the guide and ensure good lighting
+                    </p>
+                </div>
+
+                <!-- Status Messages -->
+                <div id="status-message" class="mt-4 text-center hidden">
+                    <div class="inline-flex items-center px-4 py-2 rounded-lg text-sm"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Attendance History -->
+        <div class="mt-8 bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="p-6">
+                <h3 class="text-xl font-bold text-gray-900 mb-4">Recent Attendance History</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="attendance-history">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stream = null;
+        let detector = null;
+        let detectionInterval = null;
+        let currentUser = null;
+        let subjects = [];
+        let faceDetected = false;
+
+        async function initializeCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "user",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                await loadFaceDetector();
+                startFaceDetection();
+                loadUserData();
+            } catch (error) {
+                showStatus('Camera access denied. Please enable camera permissions.', 'error');
+            }
+        }
+
+        async function loadFaceDetector() {
+            try {
+                detector = await faceDetection.createDetector(faceDetection.SupportedModels.MediaPipeFaceDetector, {
+                    runtime: 'mediapipe',
+                    solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection',
+                    modelType: 'short'
+                });
+            } catch (error) {
+                showStatus('Error loading face detection model.', 'error');
+            }
+        }
+
+        function startFaceDetection() {
+            const video = document.getElementById('video');
+            const overlay = document.getElementById('overlay');
+            const faceStatus = document.getElementById('face-status');
+            
+            overlay.width = video.offsetWidth;
+            overlay.height = video.offsetHeight;
+
+            detectionInterval = setInterval(async () => {
+                if (detector && video.readyState === 4) {
+                    try {
+                        const faces = await detector.estimateFaces(video, {
+                            flipHorizontal: false
+                        });
+                        
+                        const ctx = overlay.getContext('2d');
+                        ctx.clearRect(0, 0, overlay.width, overlay.height);
+                        
+                        if (faces.length === 1) {
+                            const face = faces[0];
+                            
+                            // Draw face box
+                            ctx.strokeStyle = '#00ff00';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(
+                                face.box.xMin * overlay.width,
+                                face.box.yMin * overlay.height,
+                                face.box.width * overlay.width,
+                                face.box.height * overlay.height
+                            );
+
+                            // Update face status
+                            faceStatus.textContent = 'Face Detected';
+                            faceStatus.classList.remove('hidden', 'bg-red-100', 'text-red-700');
+                            faceStatus.classList.add('bg-green-100', 'text-green-700');
+                            faceDetected = true;
+                        } else {
+                            faceStatus.textContent = faces.length === 0 ? 'No Face Detected' : 'Multiple Faces Detected';
+                            faceStatus.classList.remove('hidden', 'bg-green-100', 'text-green-700');
+                            faceStatus.classList.add('bg-red-100', 'text-red-700');
+                            faceDetected = false;
+                        }
+
+                        updateCaptureButton();
+                    } catch (error) {
+                        console.error('Face detection error:', error);
+                    }
+                }
+            }, 100);
+        }
+
+        function updateCaptureButton() {
+            const captureBtn = document.getElementById('capture-btn');
+            const subjectSelect = document.getElementById('subject-select');
+            
+            captureBtn.disabled = !faceDetected || !subjectSelect.value || !navigator.onLine;
+        }
+
+        function loadUserData() {
+            const userData = JSON.parse(localStorage.getItem('currentUser'));
+            if (!userData) {
+                window.location.href = 'login.html';
+                return;
+            }
+            currentUser = userData;
+            document.getElementById('student-name').textContent = userData.name;
+
+            // Load available subjects
+            const users = JSON.parse(localStorage.getItem('users') || '[]');
+            const teachers = users.filter(user => user.role === 'teacher');
+            subjects = teachers.map(teacher => ({
+                name: teacher.subject,
+                timing: teacher.timing,
+                wifiSSID: teacher.wifiSSID
+            }));
+
+            const subjectSelect = document.getElementById('subject-select');
+            subjects.forEach(subject => {
+                const option = document.createElement('option');
+                option.value = subject.name;
+                option.textContent = `${subject.name} (${subject.timing})`;
+                subjectSelect.appendChild(option);
+            });
+
+            loadAttendanceHistory();
+        }
+
+        function checkWiFiConnection() {
+            const subjectSelect = document.getElementById('subject-select');
+            const selectedSubject = subjects.find(s => s.name === subjectSelect.value);
+            const wifiStatus = document.getElementById('wifi-status');
+
+            if (!selectedSubject) {
+                wifiStatus.innerHTML = `
+                    <div class="flex items-center">
+                        <i class="fas fa-info-circle text-yellow-400 mr-2"></i>
+                        <span class="text-yellow-700">Please select a subject first</span>
+                    </div>
+                `;
+                wifiStatus.className = 'mb-6 p-4 bg-yellow-50 rounded-lg';
+                return;
+            }
+
+            if (navigator.onLine) {
+                wifiStatus.innerHTML = `
+                    <div class="flex items-center">
+                        <i class="fas fa-wifi text-green-400 mr-2"></i>
+                        <span class="text-green-700">Connected to ${selectedSubject.wifiSSID}</span>
+                    </div>
+                `;
+                wifiStatus.className = 'mb-6 p-4 bg-green-50 rounded-lg';
+            } else {
+                wifiStatus.innerHTML = `
+                    <div class="flex items-center">
+                        <i class="fas fa-wifi text-red-400 mr-2"></i>
+                        <span class="text-red-700">Please connect to ${selectedSubject.wifiSSID}</span>
+                    </div>
+                `;
+                wifiStatus.className = 'mb-6 p-4 bg-red-50 rounded-lg';
+            }
+
+            updateCaptureButton();
+        }
+
+        function showStatus(message, type = 'success') {
+            const statusMessage = document.getElementById('status-message');
+            const messageDiv = statusMessage.querySelector('div');
+            
+            statusMessage.classList.remove('hidden');
+            messageDiv.className = 'inline-flex items-center px-4 py-2 rounded-lg text-sm';
+            
+            if (type === 'success') {
+                messageDiv.classList.add('bg-green-50', 'text-green-700');
+                messageDiv.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${message}`;
+            } else {
+                messageDiv.classList.add('bg-red-50', 'text-red-700');
+                messageDiv.innerHTML = `<i class="fas fa-exclamation-circle mr-2"></i>${message}`;
+            }
+        }
+
+        async function markAttendance() {
+            const subjectSelect = document.getElementById('subject-select');
+            const selectedSubject = subjectSelect.value;
+
+            if (!selectedSubject) {
+                showStatus('Please select a subject', 'error');
+                return;
+            }
+
+            if (!faceDetected) {
+                showStatus('No face detected. Please position yourself in front of the camera.', 'error');
+                return;
+            }
+
+            try {
+                // Store attendance record
+                const now = new Date();
+                const attendanceRecord = {
+                    studentId: currentUser.email,
+                    studentName: currentUser.name,
+                    subject: selectedSubject,
+                    date: now.toISOString().split('T')[0],
+                    time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                    status: 'Present'
+                };
+
+                const attendance = JSON.parse(localStorage.getItem('attendance') || '[]');
+                
+                // Check if attendance already marked for this subject today
+                const todayAttendance = attendance.find(record => 
+                    record.studentId === currentUser.email &&
+                    record.subject === selectedSubject &&
+                    record.date === now.toISOString().split('T')[0]
+                );
+
+                if (todayAttendance) {
+                    showStatus('Attendance already marked for this subject today', 'error');
+                    return;
+                }
+
+                attendance.push(attendanceRecord);
+                localStorage.setItem('attendance', JSON.stringify(attendance));
+
+                showStatus('Attendance marked successfully! Thank you.');
+                loadAttendanceHistory();
+                
+                // Disable the button temporarily
+                const captureBtn = document.getElementById('capture-btn');
+                captureBtn.disabled = true;
+                setTimeout(() => updateCaptureButton(), 5000);
+            } catch (error) {
+                showStatus('Error marking attendance. Please try again.', 'error');
+            }
+        }
+
+        function loadAttendanceHistory() {
+            const attendance = JSON.parse(localStorage.getItem('attendance') || '[]');
+            const studentAttendance = attendance.filter(record => record.studentId === currentUser.email);
+            const historyTable = document.getElementById('attendance-history');
+            
+            historyTable.innerHTML = studentAttendance.reverse().slice(0, 10).map(record => `
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${record.subject}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${record.date}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${record.time}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            ${record.status}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function logout() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+            }
+            localStorage.removeItem('currentUser');
+            window.location.href = 'index.html';
+        }
+
+        // Event Listeners
+        document.getElementById('capture-btn').addEventListener('click', markAttendance);
+        document.getElementById('subject-select').addEventListener('change', checkWiFiConnection);
+        window.addEventListener('load', initializeCamera);
+        window.addEventListener('online', checkWiFiConnection);
+        window.addEventListener('offline', checkWiFiConnection);
+    </script>
+</body>
+</html>
